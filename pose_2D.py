@@ -36,30 +36,30 @@ FACE_POSITIONS = {'nose': [0.0, 0.0, 0.0],
 NB_JOINTS = 21
 
 """normalize the data so we have the center hip at the axes origins and ymax-ymin is 1 """
-def normalize(pedestrian):
+def normalize(data):
     
     ##find the dimension of the joints
-    if len(pedestrian.shape)>1:
-        if pedestrian.shape[1]>1:
-            dim = pedestrian.shape[1]
+    if len(data.shape)>1:
+        if data.shape[1]>1:
+            dim = data.shape[1]
     else:
-        dim = int(max(pedestrian.shape)/NB_JOINTS)
+        dim = int(max(data.shape)/NB_JOINTS)
     
-    pedestrian = pedestrian.reshape((NB_JOINTS,dim)).transpose()
+    data = data.reshape((NB_JOINTS,dim)).transpose()
     
     #we find the shift to center around the hip
-    shift = (pedestrian[:dim,joint_dict['right hip']] + pedestrian[:dim,joint_dict['left hip']]).reshape((dim,1))/2
+    shift = (data[:dim,joint_dict['right hip']] + data[:dim,joint_dict['left hip']]).reshape((dim,1))/2
     
     #we find the ratio to scale down
-    ratio = (np.max(pedestrian[1,:]-np.min(pedestrian[1,:])))
-    #ratio = find_limb_length(pedestrian, 'hip')/0.1739
+    ratio = (np.max(data[1,:]-np.min(data[1,:])))
+    #ratio = find_limb_length(data, 'hip')/0.1739
     
     # we center and scale the joints
-    pedestrian = (pedestrian[:dim,:]-shift)/ratio
+    data = (data[:dim,:]-shift)/ratio
 
-    return pedestrian.transpose().flatten()
+    return data.transpose().flatten()
 
-"""convert the joints order of pifpaf to match the ones in the H3.6M"""
+"""convert the joints order of pifpaf to match the ones we use"""
 def convert_pifpaf(og_keypoints):
     #this is the joint equivalence sequence between pifpaf anf H3.6M
     convert_seq = {0:0, 1:6, 2:8, 3:10, 4:5, 5:7, 6:9, 7:12, 8:14, 9:16, 10:11, 11:13, 12:15, 13:2, 14:1, 15:4, 16:3}
@@ -74,10 +74,6 @@ def convert_pifpaf(og_keypoints):
     nb_joints = int(len(keypoints)/2)
     keypoints = keypoints.reshape((nb_joints,2)).transpose()
 
-    r_shoulder = keypoints[:, joint_dict['right shoulder']]
-    l_shoulder = keypoints[:, joint_dict['left shoulder']]
-    shoulder = (r_shoulder + l_shoulder)/2
-
     r_hip = keypoints[:, joint_dict['right hip']]
     l_hip = keypoints[:, joint_dict['left hip']]
     hip = (r_hip + l_hip)/2
@@ -85,8 +81,13 @@ def convert_pifpaf(og_keypoints):
     r_ear = keypoints[:, joint_dict['right ear']]
     l_ear = keypoints[:, joint_dict['left ear']]
     head = (r_ear + l_ear)/2
-
+    
+    r_shoulder = keypoints[:, joint_dict['right shoulder']]
+    l_shoulder = keypoints[:, joint_dict['left shoulder']]
+    shoulder = (r_shoulder + l_shoulder)/2
+    
     back = (shoulder + hip)/2
+    shoulder = (shoulder+head)/2
 
     keypoints = np.append(keypoints, shoulder.reshape(2,1), axis = 1)
     keypoints = np.append(keypoints, hip.reshape(2,1), axis = 1)
@@ -214,8 +215,7 @@ def get_proportions(front_view, side_view):
     return body_prop, face_pos
     
 """generate a standing model from the front and side view"""
-def generate_3D_model(front_view, side_view):
-    props, face = get_proportions(front_view, side_view)
+def generate_3D_model(props, face):
     
     reconstructed_pose = []
     reconstructed_pose.append(face['nose'])
@@ -223,9 +223,11 @@ def generate_3D_model(front_view, side_view):
     head = [0,0,0]
 
     c_shoulder = np.array([0,+props['neck'],0])
+    
+    temp_shoulder = np.array([0,+2*props['neck'],0])
 
-    r_shoulder = c_shoulder + np.array([-props['shoulder'],0,0])
-    l_shoulder = c_shoulder + np.array([+props['shoulder'],0,0])
+    r_shoulder = temp_shoulder + np.array([-props['shoulder'],0,0])
+    l_shoulder = temp_shoulder + np.array([+props['shoulder'],0,0])
 
     r_elbow = r_shoulder + np.array([0,+props['biceps'],0])
     l_elbow = l_shoulder + np.array([0,+props['biceps'],0])
@@ -233,9 +235,9 @@ def generate_3D_model(front_view, side_view):
     r_wrist = r_elbow + np.array([0,+props['forearm'],0])
     l_wrist = l_elbow + np.array([0,+props['forearm'],0])
 
-    c_hip = c_shoulder + np.array([0,+2*props['back'],0])
+    c_hip = temp_shoulder + np.array([0,+2*props['back'],0])
 
-    c_back = c_shoulder + np.array([0,+props['back'],0])
+    c_back = temp_shoulder + np.array([0,+props['back'],0])
 
     r_hip = c_hip + np.array([-0.5*props['hip'],0,0])
     l_hip = c_hip + np.array([+0.5*props['hip'],0,0])

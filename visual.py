@@ -37,8 +37,11 @@ These are the order of the joints expected as input
 
 NB_JOINTS = 21
 
+FULL_CONNECTIONS = [(0,20),(0,13),(0,14),(13,15),(14,16),(20,17),(1,4),(1,2),(2,3),(4,5),(5,6),(17,19),
+                    (19,18),(18,7),(7,8),(8,9),(18,10),(10,11),(11,12)]
+
 """this is the function to plot any list of pedestrians in 2d or 3d using char_studio"""
-def plot(list_pedestrians):
+def plot(list_pedestrians, connections=FULL_CONNECTIONS):
     
     pedestrians = cp.deepcopy(list_pedestrians)
     data = []
@@ -59,9 +62,6 @@ def plot(list_pedestrians):
         
         plot2d = False
         
-        #these are the joint connections to draw
-        connections = [(0,20),(0,13),(0,14),(13,15),(14,16),(20,17),(17,1),(1,2),(2,3),(17,4),(4,5),(5,6),(17,19),(19,18),
-                       (18,7),(7,8),(8,9),(18,10),(10,11),(11,12)]
         #we check the dimension of the input
         name = '3D pose'
 
