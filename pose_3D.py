@@ -35,6 +35,21 @@ FACE_POSITIONS = {'nose': [0.0, 0.0, 0.0],
 
 NB_JOINTS = 21
 
+"""normalize the data so we have the center hip at the axes origins and ymax-ymin is 1 """
+def normalize(data):
+    
+    #we find the shift to center around the hip
+    shift = (data[:,joint_dict['right hip']] + data[:,joint_dict['left hip']]).reshape((3,1))/2
+    
+    #we find the ratio to scale down
+    ratio = (np.max(data[1,:]-np.min(data[1,:])))
+    #ratio = find_limb_length(data, 'hip')/0.1739
+    
+    # we center and scale the joints
+    data = (data[:,:]-shift)/ratio
+
+    return data
+
 """find the length of a limb from its name"""
 def find_limb_length(data, limb_name):
 
@@ -46,14 +61,14 @@ def find_limb_length(data, limb_name):
 
 """ Change the position of a joint in 3d"""
 def change_3d_joint_pos(data, joint_name, pos_3d):
-    keypoints = data#.reshape((NB_JOINTS,3)).transpose()
+    keypoints = data
     keypoints[:, joint_dict[joint_name]] = pos_3d
 
     return keypoints#.transpose().flatten()
 
 """ get the position of a joint in 3d"""
 def get_3d_joint_pos(data, joint_name):
-    keypoints = data#.reshape((NB_JOINTS,3)).transpose()
+    keypoints = data
 
     return keypoints[:, joint_dict[joint_name]].reshape((3,1))
 
@@ -239,3 +254,15 @@ def full_pose_rotation(data, angle_dic):
         if key in axis:
             final_pose = rotate_pose(final_pose, key, a[0])
     return final_pose
+
+"""Filter joints according to a list of them"""
+def filter_joints(data, list_joints, value):
+    
+    null_pos = np.array([value,value,value])
+    
+    joints_data = data.copy()
+    
+    for joint in list(set(joint_names)-set(list_joints)):
+        joints_data = change_3d_joint_pos(joints_data, joint, null_pos)
+        
+    return joints_data

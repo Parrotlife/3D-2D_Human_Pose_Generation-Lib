@@ -155,7 +155,8 @@ def show_pp_on_image(pedestrian, datapath='../../jeanmarc_data/data/kitti-images
 
     shift = np.array([int((1-scale_r)*box[0]),int((1-scale_r)*box[1])])
     
-    ax[0].imshow(im[int((1-scale_r)*box[1]):int((1+scale_r)*box[3]),int((1-scale_r)*box[0]):int((1+scale_r)*box[2])])
+    ax[0].imshow(im[int((1-scale_r)*box[1]):int((1+scale_r)*box[1])+int((1+scale_r)*box[3]),
+                    int((1-scale_r)*box[0]):int((1+scale_r)*box[0])+int((1+scale_r)*box[2])])
     ax[1].imshow(im)
     
 
@@ -164,7 +165,10 @@ def show_pp_on_image(pedestrian, datapath='../../jeanmarc_data/data/kitti-images
     centered_kp=pedestrian['og_keypoints'].transpose()-shift
     
     rect2 = patches.Rectangle((box[0],box[1]),box[2]-box[0],box[3]-box[1],linewidth=2,edgecolor='g',facecolor='none')
-
+    
+    rect2 = patches.Rectangle((box[0],box[1]),box[2],box[3],linewidth=2,edgecolor='g',facecolor='none')
+    
+    ax[1].scatter(pedestrian['og_keypoints'].transpose()[:,0],pedestrian['og_keypoints'].transpose()[:,1],c='b')
 
     ax[0].scatter(centered_kp[:,0],centered_kp[:,1],c='r')
     # Add the patch to the Axes

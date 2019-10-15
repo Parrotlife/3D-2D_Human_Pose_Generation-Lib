@@ -2,6 +2,7 @@ import os
 import numpy as np
 import json
 import math
+import pose_3D as pose3d
 
 """define limbs connections and joints indices"""
 limbs = [(17,20),(17,1),(1,2),(2,3),(17,4),(4,5),(5,6),(7,8),(8,9),(10,11),(11,12),(7,10),(17,19),(19,18)]
@@ -38,26 +39,18 @@ NB_JOINTS = 21
 """normalize the data so we have the center hip at the axes origins and ymax-ymin is 1 """
 def normalize(data):
     
-    ##find the dimension of the joints
-    if len(data.shape)>1:
-        if data.shape[1]>1:
-            dim = data.shape[1]
-    else:
-        dim = int(max(data.shape)/NB_JOINTS)
-    
-    data = data.reshape((NB_JOINTS,dim)).transpose()
     
     #we find the shift to center around the hip
-    shift = (data[:dim,joint_dict['right hip']] + data[:dim,joint_dict['left hip']]).reshape((dim,1))/2
+    shift = (data[:,joint_dict['right hip']] + data[:,joint_dict['left hip']]).reshape((2,1))/2
     
     #we find the ratio to scale down
     ratio = (np.max(data[1,:]-np.min(data[1,:])))
     #ratio = find_limb_length(data, 'hip')/0.1739
     
     # we center and scale the joints
-    data = (data[:dim,:]-shift)/ratio
+    data = (data[:,:]-shift)/ratio
 
-    return data.transpose().flatten()
+    return data#.transpose().flatten()
 
 """convert the joints order of pifpaf to match the ones we use"""
 def convert_pifpaf(og_keypoints):
@@ -94,9 +87,11 @@ def convert_pifpaf(og_keypoints):
     keypoints = np.append(keypoints, back.reshape(2,1), axis = 1)
     keypoints = np.append(keypoints, head.reshape(2,1), axis = 1)
 
-    keypoints = keypoints.transpose().flatten()
+    #keypoints = keypoints.transpose().flatten()
+    
+    keypoints = normalize(keypoints)
 
-    return(normalize(np.array(keypoints)))
+    return(keypoints.transpose().flatten())
 
 
 """load all pifpaf output files in a directory"""
@@ -108,27 +103,28 @@ def load_pifpaf(path):
     #we then create a list of dictionnaries holding all relevent data to a pedestrian
     pifpafbox = []
     for i, label in enumerate(labels_names):
-        with open(path+label) as inputfile:
-            temp = json.load(inputfile)
+        if label[-4:] == 'json':
+            with open(path+label) as inputfile:
+                temp = json.load(inputfile)
 
-            if temp != []:
-                for person in temp:
-                    new = {}
-                    new['ppbox'] = [x for x in person['bbox']]
+                if temp != []:
+                    for person in temp:
+                        new = {}
+                        new['ppbox'] = [x for x in person['bbox']]
 
-                    keyp = [x for x in person['keypoints']]
+                        keyp = [x for x in person['keypoints']]
 
-                    new['confidence'] = keyp[2::3]
+                        new['confidence'] = keyp[2::3]
 
-                    del keyp[2::3]
+                        del keyp[2::3]
 
-                    new['image_id'] = label[0:6]
+                        new['image_id'] = label[0:6]
 
-                    new['og_keypoints'] = np.array(keyp).reshape((int(len(keyp)/2),2)).transpose()
-                    
-                    new['conv_keypoints'] = convert_pifpaf(new['og_keypoints'])
+                        new['og_keypoints'] = np.array(keyp).reshape((int(len(keyp)/2),2)).transpose()
 
-                    pifpafbox.append(new)
+                        new['conv_keypoints'] = convert_pifpaf(new['og_keypoints'])
+
+                        pifpafbox.append(new)
     print("we loaded",len(pifpafbox), "pedestrians")
     return pifpafbox
 
@@ -150,10 +146,10 @@ def get_2d_joint_pos(data, joint_name):
 
 """ Change the position of a joint in 2d"""
 def change_2d_joint_pos(data, joint_name, pos_2d):
-    pedestrian = data.reshape((NB_JOINTS,2)).transpose()
+    pedestrian = data#.reshape((NB_JOINTS,2)).transpose()
     pedestrian[:, joint_dict[joint_name]] = pos_2d
         
-    return pedestrian.transpose().flatten()
+    return pedestrian#.transpose().flatten()
 
 """ extract the proportions and positions of the body and facial 
 features of a person from a front view and a side view keypoints"""
@@ -176,7 +172,6 @@ def get_proportions(front_view, side_view):
     ## get the nose, eyes and ears pos relatif to the head using the side view
     
     d_nose_head = find_2_joints_distance(side_view, 'nose', 'head')
-    
     
     face_pos['nose'] = [0.0, 0.0, d_nose_head]
     
@@ -260,9 +255,20 @@ def generate_3D_model(props, face):
                                list(l_elbow), list(l_wrist), list(r_hip), list(r_knee), list(r_ankle),
                                list(l_hip), list(l_knee), list(l_ankle), list(r_eye), list(l_eye), r_ear, l_ear, 
                                list(c_shoulder), list(c_hip), list(c_back), head])
-
-    reconstructed_pose = np.array(reconstructed_pose)
     
-    return normalize(reconstructed_pose.flatten())
+    
+    reconstructed_pose = pose3d.normalize(np.array(reconstructed_pose).transpose())
+    
+    return reconstructed_pose.transpose().flatten()
 
-
+"""Filter joints according to a list of them"""
+def filter_joints(data, list_joints, value):
+    
+    null_pos = np.array([value,value])
+    
+    joints_data = data.copy()
+    
+    for joint in list(set(joint_names)-set(list_joints)):
+        joints_data = change_2d_joint_pos(joints_data, joint, null_pos)
+        
+    return joints_data
