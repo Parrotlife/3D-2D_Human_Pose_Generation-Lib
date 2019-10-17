@@ -3,6 +3,9 @@ import numpy as np
 import json
 import math
 import pose_3D as pose3d
+from PIL import Image
+import torch
+import torch.nn.functional as F
 
 """define limbs connections and joints indices"""
 limbs = [(17,20),(17,1),(1,2),(2,3),(17,4),(4,5),(5,6),(7,8),(8,9),(10,11),(11,12),(7,10),(17,19),(19,18)]
@@ -36,6 +39,11 @@ FACE_POSITIONS = {'nose': [0.0, 0.0, 0.0],
 
 NB_JOINTS = 21
 
+"""intrinsic camera matrix"""
+kk = np.array([[424.72847911,  -0.46074429, 291.65605788],
+               [  0.        , 426.16973617, 146.18885257],
+               [  0.        ,   0.        ,   1.        ]])
+
 """normalize the data so we have the center hip at the axes origins and ymax-ymin is 1 """
 def normalize(data):
     
@@ -51,6 +59,25 @@ def normalize(data):
     data = (data[:,:]-shift)/ratio
 
     return data#.transpose().flatten()
+"""Convert a tensor in pixel coordinate to absolute camera coordinates
+   It accepts lists or torch/numpy tensors of (m, 2) or (m, x, 2)
+   where x is the number of keypoints"""
+def pixel_to_camera(uv_tensor, kk, z_met):
+
+    if isinstance(uv_tensor, (list, np.ndarray)):
+        uv_tensor = torch.tensor(uv_tensor)
+    if isinstance(kk, list):
+        kk = torch.tensor(kk)
+    if uv_tensor.size()[-1] != 2:
+        uv_tensor = uv_tensor.permute(0, 2, 1)  # permute to have 2 as last dim to be padded
+        assert uv_tensor.size()[-1] == 2, "Tensor size not recognized"
+    uv_padded = F.pad(uv_tensor, pad=(0, 1), mode="constant", value=1)  # pad only last-dim below with value 1
+
+    kk_1 = torch.inverse(kk)
+    xyz_met_norm = torch.matmul(uv_padded, kk_1.t())  # More general than torch.mm
+    xyz_met = xyz_met_norm * z_met
+
+    return xyz_met
 
 """convert the joints order of pifpaf to match the ones we use"""
 def convert_pifpaf(og_keypoints):
@@ -89,10 +116,33 @@ def convert_pifpaf(og_keypoints):
 
     #keypoints = keypoints.transpose().flatten()
     
+    keypoints = pixel_to_camera(keypoints.transpose(), torch.tensor(kk), 1).numpy().transpose()[:2]
+    
     keypoints = normalize(keypoints)
 
     return(keypoints.transpose().flatten())
 
+"""scale an image and convert it to jpg"""
+def scale_and_convert(image_path, max_size):
+    if image_path[-3:] in ['jpg','png']:
+        
+        scaled = False
+        converted = False
+        im = Image.open(image_path)
+        w, h = im.size
+        
+        if image_path[-3:] != 'jpg':
+            im = im.convert('RGB')
+            converted = True
+        
+        if (w*h) > max_size:
+            scale = max_size/(w*h)
+            im = im.resize((int(w*scale), int(h*scale)), Image.ANTIALIAS)
+            scaled = True
+        
+        if scaled | converted:
+            os.remove(image_path)
+            im.save(image_path[:-3]+'jpg', quality=90)
 
 """load all pifpaf output files in a directory"""
 def load_pifpaf(path):
