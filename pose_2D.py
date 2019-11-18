@@ -59,6 +59,7 @@ def normalize(data):
     data = (data[:,:]-shift)/ratio
 
     return data#.transpose().flatten()
+
 """Convert a tensor in pixel coordinate to absolute camera coordinates
    It accepts lists or torch/numpy tensors of (m, 2) or (m, x, 2)
    where x is the number of keypoints"""
@@ -113,11 +114,9 @@ def convert_pifpaf(og_keypoints):
     keypoints = np.append(keypoints, hip.reshape(2,1), axis = 1)
     keypoints = np.append(keypoints, back.reshape(2,1), axis = 1)
     keypoints = np.append(keypoints, head.reshape(2,1), axis = 1)
-
-    #keypoints = keypoints.transpose().flatten()
     
     keypoints = pixel_to_camera(keypoints.transpose(), torch.tensor(kk), 1).numpy().transpose()[:2]
-    
+
     keypoints = normalize(keypoints)
 
     return(keypoints.transpose().flatten())
@@ -307,7 +306,7 @@ def generate_3D_model(props, face):
                                list(c_shoulder), list(c_hip), list(c_back), head])
     
     
-    reconstructed_pose = pose3d.normalize(np.array(reconstructed_pose).transpose())
+    reconstructed_pose = pose3d.normalize(np.array(reconstructed_pose).transpose(), resize = False)
     
     return reconstructed_pose.transpose().flatten()
 

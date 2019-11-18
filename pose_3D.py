@@ -36,14 +36,17 @@ FACE_POSITIONS = {'nose': [0.0, 0.0, 0.0],
 NB_JOINTS = 21
 
 """normalize the data so we have the center hip at the axes origins and ymax-ymin is 1 """
-def normalize(data):
+def normalize(data, resize = True):
     
     #we find the shift to center around the hip
     shift = (data[:,joint_dict['right hip']] + data[:,joint_dict['left hip']]).reshape((3,1))/2
     
-    #we find the ratio to scale down
-    ratio = (np.max(data[1,:]-np.min(data[1,:])))
-    #ratio = find_limb_length(data, 'hip')/0.1739
+    ratio = 1
+    
+    if resize:
+        #we find the ratio to scale down
+        ratio = (np.max(data[1,:]-np.min(data[1,:])))
+        #ratio = find_limb_length(data, 'hip')/0.1739
     
     # we center and scale the joints
     data = (data[:,:]-shift)/ratio
@@ -149,7 +152,7 @@ def move_member(data, member_name, a0, a1, a2, a3):
 
         joints_data = change_3d_joint_pos(joints_data, body_side+' '+joint, pos.reshape((3)))
     
-    return joints_data, angles_dic
+    return joints_data
 
 """Rotate the pose according to an angle and axis"""
 def rotate_pose(data, axis, angle):
