@@ -120,7 +120,7 @@ def move_member(data, member_name, a0, a1, a2, a3):
 
         r_1 = np.array([[ c1, -s1, 0],
                         [ s1,  c1, 0],
-                        [-s1,   0, 1]])
+                        [0,   0, 1]])
 
 
     #### get the limbs lengths

@@ -45,11 +45,12 @@ kk = np.array([[424.72847911,  -0.46074429, 291.65605788],
                [  0.        ,   0.        ,   1.        ]])
 
 """normalize the data so we have the center hip at the axes origins and ymax-ymin is 1 """
-def normalize(data):
+def normalize(data, shift=None):
     
     
     #we find the shift to center around the hip
-    shift = (data[:,joint_dict['right hip']] + data[:,joint_dict['left hip']]).reshape((2,1))/2
+    if shift is None:
+        shift = (data[:,joint_dict['right hip']] + data[:,joint_dict['left hip']]).reshape((2,1))/2
     
     #we find the ratio to scale down
     ratio = (np.max(data[1,:]-np.min(data[1,:])))

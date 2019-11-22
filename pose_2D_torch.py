@@ -311,9 +311,12 @@ def generate_3D_model(props, face):
     return reconstructed_pose.transpose().flatten()
 
 """Filter joints according to a list of them"""
-def filter_joints(data, list_joints, value):
+def filter_joints(data, list_joints, value_x, value_y=None):
     
-    null_pos = np.array([value,value])
+    if not value_y:
+        value_y = value_x
+    
+    null_pos = np.array([value_x,value_y])
     
     joints_data = data.copy()
     
