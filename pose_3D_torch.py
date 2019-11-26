@@ -1,4 +1,5 @@
 import os
+import torch
 import numpy as np
 import json
 import math
@@ -35,63 +36,40 @@ FACE_POSITIONS = {'nose': [0.0, 0.0, 0.0],
 
 NB_JOINTS = 21
 
-"""normalize the data so we have the center hip at the axes origins and ymax-ymin is 1 """
-def normalize(data, resize = True):
-    
-    #we find the shift to center around the hip
-    shift = (data[:,joint_dict['right hip']] + data[:,joint_dict['left hip']]).reshape((3,1))/2
-    
-    ratio = 1
-    
-    if resize:
-        #we find the ratio to scale down
-        ratio = (np.max(data[1,:]-np.min(data[1,:])))
-        #ratio = find_limb_length(data, 'hip')/0.1739
-    
-    # we center and scale the joints
-    data = (data[:,:]-shift)/ratio
-
-    return data
-
 """find the length of a limb from its name"""
-def find_limb_length(data, limb_name):
-
-    dim = 3
-
-    keypoints = data#.reshape((NB_JOINTS,dim)).transpose()
-
-    return np.linalg.norm(keypoints[:,limb_dict[limb_name][0]]-keypoints[:,limb_dict[limb_name][1]])
+def tensor_find_limb_length(keypoints, limb_name):
+    batch_size = keypoints.size()[0]
+    
+    return torch.norm(keypoints[:,:,limb_dict[limb_name][0]]-keypoints[:,:,limb_dict[limb_name][1]], dim=1)\
+                      .reshape((batch_size,1))
 
 """ Change the position of a joint in 3d"""
-def change_3d_joint_pos(data, joint_name, pos_3d):
-    keypoints = data
-    keypoints[:, joint_dict[joint_name]] = pos_3d
-
-    return keypoints#.transpose().flatten()
+def tensor_change_3d_joint_pos(keypoints, joint_name, pos_3d):
+    keypoints[:, :, joint_dict[joint_name]] = pos_3d
+    return keypoints
 
 """ get the position of a joint in 3d"""
-def get_3d_joint_pos(data, joint_name):
-    keypoints = data
-
-    return keypoints[:, joint_dict[joint_name]].reshape((3,1))
+def tensor_get_3d_joint_pos(keypoints, joint_name):
+    batch_size = keypoints.size()[0]
+    return keypoints[:,:, joint_dict[joint_name]].reshape((batch_size,3,1))
 
 """ Forward kinematics function"""  
-def move_member(data, member_name, a0, a1, a2, a3):
+def tensor_move_member(data, member_name, a0, a1, a2, a3, device=torch.device("cuda:0")):
     
-    joints_data = data.copy()
+    batch_size = data.size()[0]
     
     #### get all the useful sin and cos
-    c0 = math.cos(a0)
-    c1 = math.cos(a1)
-    c2 = math.cos(a2)
-    c3 = math.cos(a3)
-    c23 = math.cos(a2+a3)
+    c0 = torch.cos(a0)
+    c1 = torch.cos(a1)
+    c2 = torch.cos(a2)
+    c3 = torch.cos(a3)
+    c23 = torch.cos(a2+a3)
 
-    s0 = math.sin(a0)
-    s1 = math.sin(a1)
-    s2 = math.sin(a2)
-    s3 = math.sin(a3)
-    s23 = math.sin(a2+a3)
+    s0 = torch.sin(a0)
+    s1 = torch.sin(a1)
+    s2 = torch.sin(a2)
+    s3 = torch.sin(a3)
+    s23 = torch.sin(a2+a3)
 
     #### get what member we are moving and w
     body_side = member_name.split(maxsplit=1)[0]
@@ -101,103 +79,130 @@ def move_member(data, member_name, a0, a1, a2, a3):
     if member == 'arm':
         member_limbs = ['biceps', 'forearm']
         member_joints = ['shoulder', 'elbow', 'wrist']
+        
+        r_1 = []
+        r_2 = []
+        for i in range(batch_size):
 
-        r_2 = np.array([[1,    0,   0],
-                        [0,   c0, -s0],
-                        [0,   s0,  c0]])
+            r_2.append(torch.tensor([[1,       0,      0],
+                                     [0,   c0[i], -s0[i]],
+                                     [0,   s0[i],  c0[i]]]))
 
-        r_1 = np.array([[ c1,  0,   s1],
-                        [  0,  1,    0],
-                        [-s1,  0,   c1]])
 
+            r_1.append(torch.tensor([[ c1[i],  0,   s1[i]],
+                                     [     0,  1,       0],
+                                     [-s1[i],  0,    c1[i]]]))
+        
     else:
         member_limbs = ['quad', 'tibias']
         member_joints = ['hip', 'knee', 'ankle']
 
-        r_2 = np.array([[ c0,  0,   s0],
-                        [  0,  1,    0],
-                        [-s0,  0,   c0]])
+        r_2.append(torch.tensor([[ c0[i],     0, s0[i]],
+                                 [     0,     1,     0],
+                                 [-s0[i],     0, c0[i]]]))
 
-        r_1 = np.array([[ c1, -s1, 0],
-                        [ s1,  c1, 0],
-                        [-s1,   0, 1]])
-
+        r_1.append(torch.tensor([[ c1[i], -s1[i],    0],
+                                 [ s1[i],  c1[i],    0],
+                                 [     0,      0,    1]]))
+        
+    r_1 = torch.stack(r_1, dim=0).to(device)
+    r_2 = torch.stack(r_2, dim=0).to(device)
 
     #### get the limbs lengths
-    l2 = find_limb_length(joints_data, body_side+' '+member_limbs[0])
-    l3 = find_limb_length(joints_data, body_side+' '+member_limbs[1])
+    l2 = tensor_find_limb_length(data, body_side+' '+member_limbs[0])
+    l3 = tensor_find_limb_length(data, body_side+' '+member_limbs[1])
 
     #### get the member origin
-    origin_pos = get_3d_joint_pos(joints_data, body_side+' '+member_joints[0])
-
+    origin_pos = tensor_get_3d_joint_pos(data, body_side+' '+member_joints[0])
+    
+    c2 = c2.reshape((batch_size,1))
+    s2 = s2.reshape((batch_size,1))
+    c23 = c23.reshape((batch_size,1))
+    s23 = s23.reshape((batch_size,1))
+    
+    zeros = torch.tensor([0 for _ in range(batch_size)]).float().reshape((batch_size,1)).to(device)
+    
     ### find the 2d positions of all the joints relative to the origin
     if member == 'arm':            
         factor = 1         
         if body_side == 'right':
             factor = -1
 
-        x_joints = dict(zip(member_joints, [0, factor*(l2*c2), factor*(l2*c2 + l3*c23)]))
-        y_joints = dict(zip(member_joints, [0, factor*(l2*s2), factor*(l2*s2 + l3*s23)]))
-        z_joints = dict(zip(member_joints, [0, 0, 0]))
+        x_joints = dict(zip(member_joints, [zeros, factor*(l2*c2), factor*(l2*c2 + l3*c23)]))
+        y_joints = dict(zip(member_joints, [zeros, factor*(l2*s2), factor*(l2*s2 + l3*s23)]))
+        z_joints = dict(zip(member_joints, [zeros, zeros, zeros]))
     else:
-        y_joints = dict(zip(member_joints, [0, l2*c2, l2*c2 + l3*c23]))
-        z_joints = dict(zip(member_joints, [0, l2*s2, l2*s2 + l3*s23]))
-        x_joints = dict(zip(member_joints, [0, 0, 0]))
+        y_joints = dict(zip(member_joints, [zeros, l2*c2, l2*c2 + l3*c23]))
+        z_joints = dict(zip(member_joints, [zeros, l2*s2, l2*s2 + l3*s23]))
+        x_joints = dict(zip(member_joints, [zeros, zeros, zeros]))
+        
 
     #### find the new position of each joints and move it
     for joint in member_joints[1:]:
-        pos = np.array([x_joints[joint], y_joints[joint], z_joints[joint]]).reshape((3,1))
-        pos = np.dot(r_2, np.dot(r_1, pos))
+        pos = torch.stack([x_joints[joint], y_joints[joint], z_joints[joint]]).transpose(0,1)
+        pos = torch.matmul(r_2,torch.matmul(r_1, pos))
+        
         pos = pos + origin_pos
-
-        joints_data = change_3d_joint_pos(joints_data, body_side+' '+joint, pos.reshape((3)))
+        
+        data = tensor_change_3d_joint_pos(data, body_side+' '+joint, pos.reshape((batch_size,3)))
     
-    return joints_data
+    return data
 
 """Rotate the pose according to an angle and axis"""
-def rotate_pose(data, axis, angle):
+def tensor_rotate_pose(data, axis, angle, device=torch.device("cuda:0")):
         
-        joints_data = data.copy()
+        c = torch.cos(angle)
+        s = torch.sin(angle)
         
-        c = math.cos(angle)
-        s = math.sin(angle)
+        batch_size = data.size()[0]
         
-        r = {'x': np.array([[1, 0,  0],
-                            [0, c, -s],
-                            [0, s,  c]]),
-             'y': np.array([[ c, 0, s],
-                            [ 0, 1, 0],
-                            [-s, 0, c]]),
-             'z': np.array([[ c, -s, 0],
-                            [ s,  c, 0],
-                            [ 0,  0, 1]])
-            }
+        if axis == 'x':
+            r = torch.stack([torch.tensor([[1,    0,     0],
+                                           [0, c[i], -s[i]],
+                                           [0, s[i],  c[i]]]) for i in range(batch_size)], dim=0).to(device)
+        if axis == 'y':
+            r = torch.stack([torch.tensor([[ c[i], 0, s[i]],
+                                           [    0, 1,    0],
+                                           [-s[i], 0, c[i]]]) for i in range(batch_size)], dim=0).to(device)
+        if axis == 'z':
+            r = torch.stack([torch.tensor([[ c[i], -s[i], 0],
+                                           [ s[i],  c[i], 0],
+                                           [    0,     0, 1]]) for i in range(batch_size)], dim=0).to(device)
+        
         for joint in joint_names:
-            new_pos = np.dot(r[axis], get_3d_joint_pos(joints_data, joint))
-            joints_data = change_3d_joint_pos(joints_data, joint, new_pos.reshape((3)))
+            
+            pos = tensor_get_3d_joint_pos(data, joint)
+            
+            pos = torch.matmul(r, pos)
         
-        return joints_data
+            data = tensor_change_3d_joint_pos(data, joint, pos.reshape((batch_size,3)))
+        
+        return data
     
 """Rotate the point according to an axis and an angle"""    
-def rotate_point(point, rot_axis, angle):
+def tensor_rotate_point(point, rot_axis, angle, device=torch.device("cuda:0")):
     
-    ux, uy, uz = rot_axis
+    print('in tensor_rotate_point', device)
     
-    c = math.cos(angle)
-    s = math.sin(angle)
+    ux, uy, uz = rot_axis[:,0],rot_axis[:,1],rot_axis[:,2]
     
-    rot_matrix = np.array([[   c+ux**2*(1-c), ux*uy*(1-c)-uz*s, ux*uz*(1-c)+uy*s],
-                           [uy*ux*(1-c)+uz*s,    c+uy**2*(1-c), uy*uz*(1-c)-ux*s],
-                           [uz*ux*(1-c)-uy*s, uz*uy*(1-c)+ux*s,    c+uz**2*(1-c)]])
+    batch_size = point.size()[0]
     
-    return np.dot(rot_matrix, point)
+    c = torch.cos(angle)
+    s = torch.sin(angle)
     
+    rot_matrix = torch.stack(
+        [torch.tensor([[   c[i]+ux[i]**2*(1-c[i]), ux[i]*uy[i]*(1-c[i])-uz[i]*s[i], ux[i]*uz[i]*(1-c[i])+uy[i]*s[i]],
+                       [uy[i]*ux[i]*(1-c[i])+uz[i]*s[i],    c[i]+uy[i]**2*(1-c[i]), uy[i]*uz[i]*(1-c[i])-ux[i]*s[i]],
+                       [uz[i]*ux[i]*(1-c[i])-uy[i]*s[i], uz[i]*uy[i]*(1-c[i])+ux[i]*s[i],    c[i]+uz[i]**2*(1-c[i])]])
+         for i in range(batch_size)], dim=0).to(device)
     
+    return torch.matmul(rot_matrix, point)
 
 """Rotate the back or head according to 3 angles"""
-def rotate_backOrHead(data, member_name, a0, a1, a2):
+def tensor_rotate_backOrHead(data, member_name, a0, a1, a2, device=torch.device("cuda:0")):
         
-        joints_data = data.copy()
+        print('in tensor_rotate_backOrHead', device)
         
         joints2move = {'head': ['nose','head','right eye','left eye','right ear','left ear'],
                        'back': ['nose','head','right eye','left eye','right ear','left ear',
@@ -205,42 +210,53 @@ def rotate_backOrHead(data, member_name, a0, a1, a2):
                                 'left elbow', 'left wrist','center shoulder']}
         origins = {'head': 'center shoulder',
                    'back': 'center back'}
+        batch_size = data.size()[0]
         
-        x = np.array([1,0,0])
-        y = np.array([0,1,0])
-        z = np.array([0,0,1])
+        x = torch.tensor([[1,0,0] for _ in range(batch_size)]).float().to(device).reshape((batch_size,3,1))
+        y = torch.tensor([[0,1,0] for _ in range(batch_size)]).float().to(device).reshape((batch_size,3,1))
+        z = torch.tensor([[0,0,1] for _ in range(batch_size)]).float().to(device).reshape((batch_size,3,1))
+
+        for joint in joints2move[member_name]:
+            
+            origin_joint = tensor_get_3d_joint_pos(data, origins[member_name])
+            
+            pos = tensor_get_3d_joint_pos(data, joint) - origin_joint
+            
+            pos = tensor_rotate_point(pos, x, a0, device) + origin_joint
+            
+            data = tensor_change_3d_joint_pos(data, joint, pos.reshape((batch_size,3)))
         
+        y = tensor_rotate_point(y, x, a0, device)
+        z = tensor_rotate_point(z, x, a0, device)
         
         for joint in joints2move[member_name]:
-            pos = get_3d_joint_pos(joints_data, joint) - get_3d_joint_pos(joints_data, origins[member_name])
             
-            pos = rotate_point(pos, x, a0) + get_3d_joint_pos(joints_data, origins[member_name])
+            origin_joint = tensor_get_3d_joint_pos(data, origins[member_name])
             
-            joints_data = change_3d_joint_pos(joints_data, joint, pos.reshape((3)))
+            pos = tensor_get_3d_joint_pos(data, joint) - origin_joint
+            
+            pos = tensor_rotate_point(pos, y, a1, device) + origin_joint
+            
+            data = tensor_change_3d_joint_pos(data, joint, pos.reshape((batch_size,3)))
         
-        y = rotate_point(y, x, a0)
-        z = rotate_point(z, x, a0)
-        
-        for joint in joints2move[member_name]:
-            pos = get_3d_joint_pos(joints_data, joint) - get_3d_joint_pos(joints_data, origins[member_name])
-            
-            pos = rotate_point(pos, y, a1) + get_3d_joint_pos(joints_data, origins[member_name])
-            
-            joints_data = change_3d_joint_pos(joints_data, joint, pos.reshape((3)))
-        
-        z = rotate_point(z, y, a1)
+        z = tensor_rotate_point(z, y, a1, device)
         
         for joint in joints2move[member_name]:
-            pos = get_3d_joint_pos(joints_data, joint) - get_3d_joint_pos(joints_data, origins[member_name])
             
-            pos = rotate_point(pos, z, a2) + get_3d_joint_pos(joints_data, origins[member_name])
+            origin_joint = tensor_get_3d_joint_pos(data, origins[member_name])
             
-            joints_data = change_3d_joint_pos(joints_data, joint, pos.reshape((3)))
+            pos = tensor_get_3d_joint_pos(data, joint) - origin_joint
             
-        return joints_data
+            pos = tensor_rotate_point(pos, z, a2, device) + origin_joint
+            
+            data = tensor_change_3d_joint_pos(data, joint, pos.reshape((batch_size,3)))
+            
+        return data
     
 """Rotates a pose according to angles in a dictionary"""
-def full_pose_rotation(data, angle_dic):
+def tensor_full_pose_rotation(data, angle_dic, device=torch.device("cuda:0")):
+    
+    print('in tensor_full_pose_rotation', device)
     
     members = ['right arm', 'left arm', 'right leg', 'left leg']
     head_or_back = ['head','back']
@@ -250,22 +266,11 @@ def full_pose_rotation(data, angle_dic):
     
     for key in angle_dic.keys():
         a = angle_dic[key]
+        print('we are moving the ',key)
         if key in members:
-            final_pose = move_member(final_pose, key, a[0], a[1], a[2], a[3])
+            final_pose = tensor_move_member(final_pose, key, a[:,0], a[:,1], a[:,2], a[:,3], device)
         if key in head_or_back:
-            final_pose = rotate_backOrHead(final_pose, key, a[0], a[1], a[2])
+            final_pose = tensor_rotate_backOrHead(final_pose, key, a[:,0], a[:,1], a[:,2], device)
         if key in axis:
-            final_pose = rotate_pose(final_pose, key, a[0])
+            final_pose = tensor_rotate_pose(final_pose, key, a[:,0], device)
     return final_pose
-
-"""Filter joints according to a list of them"""
-def filter_joints(data, list_joints, value):
-    
-    null_pos = np.array([value,value,value])
-    
-    joints_data = data.copy()
-    
-    for joint in list(set(joint_names)-set(list_joints)):
-        joints_data = change_3d_joint_pos(joints_data, joint, null_pos)
-        
-    return joints_data
