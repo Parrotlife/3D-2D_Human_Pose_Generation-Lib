@@ -3,6 +3,7 @@ import torch
 import numpy as np
 import json
 import math
+import time
 
 """define limbs connections and joints indices"""
 limbs = [(17,20),(17,1),(1,2),(2,3),(17,4),(4,5),(5,6),(7,8),(8,9),(10,11),(11,12),(7,10),(17,19),(19,18)]
@@ -154,6 +155,7 @@ def tensor_rotate_pose(data, axis, angle, device=torch.device("cuda:0")):
         c = torch.cos(angle)
         s = torch.sin(angle)
         
+        
         batch_size = data.size()[0]
         
         if axis == 'x':
@@ -184,19 +186,27 @@ def tensor_rotate_point(point, rot_axis, angle, device=torch.device("cuda:0")):
     
     print('in tensor_rotate_point', device)
     
+    
     ux, uy, uz = rot_axis[:,0],rot_axis[:,1],rot_axis[:,2]
     
     batch_size = point.size()[0]
     
     c = torch.cos(angle)
     s = torch.sin(angle)
-    
+
     rot_matrix = torch.stack(
         [torch.tensor([[   c[i]+ux[i]**2*(1-c[i]), ux[i]*uy[i]*(1-c[i])-uz[i]*s[i], ux[i]*uz[i]*(1-c[i])+uy[i]*s[i]],
                        [uy[i]*ux[i]*(1-c[i])+uz[i]*s[i],    c[i]+uy[i]**2*(1-c[i]), uy[i]*uz[i]*(1-c[i])-ux[i]*s[i]],
                        [uz[i]*ux[i]*(1-c[i])-uy[i]*s[i], uz[i]*uy[i]*(1-c[i])+ux[i]*s[i],    c[i]+uz[i]**2*(1-c[i])]])
          for i in range(batch_size)], dim=0).to(device)
+
+    return torch.matmul(rot_matrix, point)
+
+"""Rotate the point according to an axis and an angle"""    
+def tensor_euler_rotate_point(point, rot_matrix, device=torch.device("cuda:0")):
     
+    print('in tensor_rotate_point', device)
+ 
     return torch.matmul(rot_matrix, point)
 
 """Rotate the back or head according to 3 angles"""
@@ -253,6 +263,102 @@ def tensor_rotate_backOrHead(data, member_name, a0, a1, a2, device=torch.device(
             
         return data
     
+"""Rotate the back or head according to 3 angles"""
+def tensor_euler_rotate_backOrHead(data, member_name, a0, a1, a2, device=torch.device("cuda:0")):
+        
+        print('in tensor_rotate_backOrHead', device)
+        
+        joints2move = {'head': ['nose','head','right eye','left eye','right ear','left ear'],
+                       'back': ['nose','head','right eye','left eye','right ear','left ear',
+                                'right shoulder','right elbow', 'right wrist', 'left shoulder',
+                                'left elbow', 'left wrist','center shoulder']}
+        origins = {'head': 'center shoulder',
+                   'back': 'center back'}
+        batch_size = data.size()[0]
+        
+        c0 = torch.cos(a0)
+        c1 = torch.cos(a1)
+        c2 = torch.cos(a2)
+        
+        s0 = torch.sin(a0)
+        s1 = torch.sin(a1)
+        s2 = torch.sin(a2)
+        
+        e00 = c1*c2 
+        e01 = -c0*s2 + s0*s1*c2
+        e02 = s0*s2 + c0*s1*c2
+        e10 = c1*s2 
+        e11 = c0*c2 + s0*s1*s2
+        e12 = -s0*c2 + c0*s1*s2
+        e20 = -s1
+        e21 = s0*c1
+        e22 = c0*c1
+        
+        rot_matrix = torch.stack(
+        [torch.tensor([[e00[i], e01[i], e02[i]],
+                       [e10[i], e11[i], e12[i]],
+                       [e20[i], e21[i], e22[i]]]) for i in range(batch_size)], dim=0).to(device)
+
+        for joint in joints2move[member_name]:
+            
+            origin_joint = tensor_get_3d_joint_pos(data, origins[member_name])
+            
+            pos = tensor_get_3d_joint_pos(data, joint) - origin_joint
+            
+            pos = tensor_euler_rotate_point(pos, rot_matrix, device) + origin_joint
+            
+            data = tensor_change_3d_joint_pos(data, joint, pos.reshape((batch_size,3)))
+            
+        return data
+    
+"""Rotate the back or head according to 3 angles"""
+def tensor_euler_rotate_backOrHead(data, member_name, a0, a1, a2, device=torch.device("cuda:0")):
+        
+        print('in tensor_rotate_backOrHead', device)
+        
+        joints2move = {'head': ['nose','head','right eye','left eye','right ear','left ear'],
+                       'back': ['nose','head','right eye','left eye','right ear','left ear',
+                                'right shoulder','right elbow', 'right wrist', 'left shoulder',
+                                'left elbow', 'left wrist','center shoulder']}
+        origins = {'head': 'center shoulder',
+                   'back': 'center back'}
+        batch_size = data.size()[0]
+        
+        c0 = torch.cos(a0)
+        c1 = torch.cos(a1)
+        c2 = torch.cos(a2)
+        
+        s0 = torch.sin(a0)
+        s1 = torch.sin(a1)
+        s2 = torch.sin(a2)
+        
+        e00 = c1*c2 
+        e01 = -c1*s2
+        e02 = s1
+        e10 = c0*s2 + c2*s0*s1 
+        e11 = c0*c2 - s0*s1*s2
+        e12 = -c1*s0
+        e20 = -c0*c2*s1 + s0*s2
+        e21 = c0*s1*s2 + c2*s0
+        e22 = c0*c1
+        
+        rot_matrix = torch.stack(
+        [torch.tensor([[e00[i], e01[i], e02[i]],
+                       [e10[i], e11[i], e12[i]],
+                       [e20[i], e21[i], e22[i]]]) for i in range(batch_size)], dim=0).to(device)
+
+        for joint in joints2move[member_name]:
+            
+            origin_joint = tensor_get_3d_joint_pos(data, origins[member_name])
+            
+            pos = tensor_get_3d_joint_pos(data, joint) - origin_joint
+            
+            pos = tensor_euler_rotate_point(pos, rot_matrix, device) + origin_joint
+            
+            data = tensor_change_3d_joint_pos(data, joint, pos.reshape((batch_size,3)))
+            
+        return data
+    
 """Rotates a pose according to angles in a dictionary"""
 def tensor_full_pose_rotation(data, angle_dic, device=torch.device("cuda:0")):
     
@@ -270,7 +376,15 @@ def tensor_full_pose_rotation(data, angle_dic, device=torch.device("cuda:0")):
         if key in members:
             final_pose = tensor_move_member(final_pose, key, a[:,0], a[:,1], a[:,2], a[:,3], device)
         if key in head_or_back:
-            final_pose = tensor_rotate_backOrHead(final_pose, key, a[:,0], a[:,1], a[:,2], device)
+            #a[:,0] = 0
+            #a[:,1] = math.pi/7
+            #a[:,2] = 0
+            
+            a0 = a[:,0]
+            a1 = a[:,1]
+            a2 = a[:,2]
+            final_pose = tensor_euler_rotate_backOrHead(final_pose, key, a0, a1, a2, device)
+            #final_pose = tensor_rotate_backOrHead(final_pose, key, a[:,0], a[:,1], a[:,2], device)
         if key in axis:
             final_pose = tensor_rotate_pose(final_pose, key, a[:,0], device)
     return final_pose
