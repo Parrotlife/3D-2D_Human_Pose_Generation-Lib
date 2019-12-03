@@ -184,7 +184,7 @@ def tensor_rotate_pose(data, axis, angle, device=torch.device("cuda:0")):
 """Rotate the point according to an axis and an angle"""    
 def tensor_rotate_point(point, rot_axis, angle, device=torch.device("cuda:0")):
     
-    print('in tensor_rotate_point', device)
+    #print('in tensor_rotate_point', device)
     
     
     ux, uy, uz = rot_axis[:,0],rot_axis[:,1],rot_axis[:,2]
@@ -205,14 +205,14 @@ def tensor_rotate_point(point, rot_axis, angle, device=torch.device("cuda:0")):
 """Rotate the point according to an axis and an angle"""    
 def tensor_euler_rotate_point(point, rot_matrix, device=torch.device("cuda:0")):
     
-    print('in tensor_rotate_point', device)
+    #print('in tensor_rotate_point', device)
  
     return torch.matmul(rot_matrix, point)
 
 """Rotate the back or head according to 3 angles"""
 def tensor_rotate_backOrHead(data, member_name, a0, a1, a2, device=torch.device("cuda:0")):
         
-        print('in tensor_rotate_backOrHead', device)
+        #print('in tensor_rotate_backOrHead', device)
         
         joints2move = {'head': ['nose','head','right eye','left eye','right ear','left ear'],
                        'back': ['nose','head','right eye','left eye','right ear','left ear',
@@ -266,7 +266,7 @@ def tensor_rotate_backOrHead(data, member_name, a0, a1, a2, device=torch.device(
 """Rotate the back or head according to 3 angles"""
 def tensor_euler_rotate_backOrHead(data, member_name, a0, a1, a2, device=torch.device("cuda:0")):
         
-        print('in tensor_rotate_backOrHead', device)
+        #print('in tensor_rotate_backOrHead', device)
         
         joints2move = {'head': ['nose','head','right eye','left eye','right ear','left ear'],
                        'back': ['nose','head','right eye','left eye','right ear','left ear',
@@ -314,7 +314,7 @@ def tensor_euler_rotate_backOrHead(data, member_name, a0, a1, a2, device=torch.d
 """Rotate the back or head according to 3 angles"""
 def tensor_euler_rotate_backOrHead(data, member_name, a0, a1, a2, device=torch.device("cuda:0")):
         
-        print('in tensor_rotate_backOrHead', device)
+        #print('in tensor_rotate_backOrHead', device)
         
         joints2move = {'head': ['nose','head','right eye','left eye','right ear','left ear'],
                        'back': ['nose','head','right eye','left eye','right ear','left ear',
@@ -362,7 +362,7 @@ def tensor_euler_rotate_backOrHead(data, member_name, a0, a1, a2, device=torch.d
 """Rotates a pose according to angles in a dictionary"""
 def tensor_full_pose_rotation(data, angle_dic, device=torch.device("cuda:0")):
     
-    print('in tensor_full_pose_rotation', device)
+    #print('in tensor_full_pose_rotation', device)
     
     members = ['right arm', 'left arm', 'right leg', 'left leg']
     head_or_back = ['head','back']
@@ -372,7 +372,7 @@ def tensor_full_pose_rotation(data, angle_dic, device=torch.device("cuda:0")):
     
     for key in angle_dic.keys():
         a = angle_dic[key]
-        print('we are moving the ',key)
+        #print('we are moving the ',key)
         if key in members:
             final_pose = tensor_move_member(final_pose, key, a[:,0], a[:,1], a[:,2], a[:,3], device)
         if key in head_or_back:
